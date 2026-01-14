@@ -20,3 +20,20 @@ class SimpleTokenizerV1:
         text = re.sub(r'([,.?_!"()\']|--)', r'\1', text)
         return text
 
+
+def main():
+    vocab = utils.create_vocab_with_verdict()
+    tokenizer = SimpleTokenizerV1(vocab)
+    text = """"It's the last he painted, you know," 
+     Mrs. Gisburn said with pardonable pride."""
+    ids = tokenizer.encode(text)
+    print(ids)
+    print(tokenizer.decode(ids))
+    unknown_text = "Hello, do you like tea?"
+    # 未知的单词，会报错
+    print( tokenizer.encode(unknown_text))
+
+
+
+if __name__ == "__main__":
+    main()
