@@ -7,6 +7,9 @@ def create_vocab(text):
     vocab = {token: integer for integer, token in enumerate(all_words)}
     return vocab
 
+def create_vocab_with_verdict():
+    return create_vocab(text=open("datas/the-verdict.txt", "r", encoding="utf-8").read())
+
 
 
 def main():
