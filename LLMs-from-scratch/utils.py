@@ -15,6 +15,19 @@ def create_vocab_with_verdict():
     return create_vocab(text=open("datas/the-verdict.txt", "r", encoding="utf-8").read())
 
 
+def create_dataloader_with_verdict_v1(batch_size=4, max_length=256,
+                         stride=128, shuffle=True, drop_last=True,
+                         num_workers=0):
+    return create_dataloader_v1(
+        open("datas/the-verdict.txt", "r", encoding="utf-8").read(),
+        batch_size=batch_size,
+        max_length=max_length,
+        stride=stride,
+        shuffle=shuffle,
+        drop_last=drop_last,
+        num_workers=num_workers
+    )
+
 def create_dataloader_v1(txt, batch_size=4, max_length=256,
      stride=128, shuffle=True, drop_last=True,
      num_workers=0):
@@ -33,10 +46,11 @@ def main():
     with open("datas/the-verdict.txt", "r", encoding="utf-8") as f:
         raw_text = f.read()
     dataloader = create_dataloader_v1(
-        raw_text, batch_size=1, max_length=4, stride=1, shuffle=False)
+        raw_text, batch_size=8, max_length=4, stride=4, shuffle=False)
     data_iter = iter(dataloader)
-    first_batch = next(data_iter)
-    print(first_batch)
+    inputs, targets = next(data_iter)
+    print("Inputs:\n", inputs)
+    print("\nTargets:\n", targets)
 
 
 if __name__ == '__main__':
