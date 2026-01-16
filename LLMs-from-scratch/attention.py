@@ -232,6 +232,12 @@ class CausalAttention(torch.nn.Module):
     因果注意力 vs 普通自注意力的唯一区别
     差一个掩码 mask！普通自注意力（Transformer 编码器）没有 mask，能看到整个序列的所有 token；
     因果注意力（Transformer 解码器）加了上三角掩码，只能看到当前及历史 token。
+    CausalAttention类的完整执行流程：
+    输入 token 特征
+    → 线性投影生成 Q/K/V
+    → 计算 token 间的注意力分数
+    → 用上三角掩码屏蔽未来位置 → 分数缩放 + Softmax 得到注意力权重
+    → Dropout 防止过拟合 → 权重加权求和 V 向量 → 输出融合语义的上下文向量
     """
 
     def __init__(self, d_in, d_out, context_length, dropout, qv_bias=False):
@@ -306,6 +312,27 @@ def test_SelfAttentionV2():
     sa_v2 = SelfAttentionV2(dim_in, dim_out)
     print(sa_v2(inputs))
 
+def test_SelfAttention():
+    inputs = torch.tensor(
+        [[0.43, 0.15, 0.89],  # Your (x^1)
+         [0.55, 0.87, 0.66],  # journey (x^2)
+         [0.57, 0.85, 0.64],  # starts (x^3)
+         [0.22, 0.58, 0.33],  # with (x^4)
+         [0.77, 0.25, 0.10],  # one (x^5)
+         [0.05, 0.80, 0.55]]  # step (x^6)
+    )
+    batch = torch.stack((inputs, inputs), dim=0)
+    print(batch.shape)
+    # 输入嵌入维度
+    dim_in = inputs.shape[1]
+    # 输出嵌入维度
+    dim_out = 2
+    torch.manual_seed(123)
+    context_length = batch.shape[1]
+    ca = CausalAttention(dim_in, dim_out, context_length, 0.0)
+    context_vecs = ca(batch)
+    print("context_vecs.shape:", context_vecs.shape)
+
 
 if __name__ == "__main__":
-    masked_attention()
+    test_SelfAttention()
