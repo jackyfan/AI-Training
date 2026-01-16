@@ -292,6 +292,117 @@ class CausalAttention(torch.nn.Module):
         return context_vec
 
 
+class MultiHeadAttentionWrapper(torch.nn.Module):
+    """
+    通过堆叠多个 CausalAttention模块来构建多头注意力模块
+    """
+
+    def __init__(self, d_in, d_out, context_length, dropout, num_heads, qv_bias=False):
+        super().__init__()
+        self.heads = torch.nn.ModuleList([CausalAttention(d_in, d_out, context_length, dropout, qv_bias) for _ in range(num_heads)])
+
+    def forward(self, x):
+        return torch.cat([head(x) for head in self.heads], dim=-1)
+
+class MultiHeadAttention(torch.nn.Module):
+    """
+    思路：先投影、后切分、并行计算、再拼接、最后融合。
+    把高维的 Q/K/V 向量，切分成num_heads个低维的子向量，
+    让每个子向量独立计算注意力（学习不同的语义关联），
+    最后把结果合并，实现「用一套参数完成多头计算」的高效目标。
+    核心维度变化：
+    输入x: [b, n, d_in]
+    → Q/K/V投影: [b, n, D]
+    → view切分头: [b, n, h, d]
+    → transpose调整顺序: [b, h, n, d]
+    → 注意力分数: [b, h, n, n]
+    → 权重加权求和V: [b, h, n, d]
+    → transpose恢复顺序: [b, n, h, d]
+    → view拼接多头: [b, n, D]
+    → out_proj融合: [b, n, D]
+    输出context_vec: [b, n, D]
+
+    """
+    def __init__(self, d_in, d_out, context_length, dropout, num_heads, qv_bias=False):
+        super().__init__()
+        # 强制校验：输出维度必须能被注意力头数整除，否则无法均分
+        # 我们要把d_out这个总维度，平均切分给num_heads个注意力头，
+        # 每个头分到的维度就是head_dim = d_out / num_heads，
+        # 如果不能整除，就会出现维度残缺，程序直接报错。
+        assert d_out % num_heads == 0, "d_out must be divisible by num_heads"
+        # 张量重塑 / 转置的核心依据，必须定义为实例变量
+        self.d_out = d_out # 多头注意力的最终总输出维度
+        self.num_heads = num_heads # 多头注意力的最终总输出维度
+        # 黄金公式：d_out = num_heads × head_dim
+        # Transformer 多头注意力的核心维度公式，所有大模型都遵循这个公式
+        self.head_dim = d_out // num_heads  # 每个注意力头的维度(核心！均分)
+
+        # 核心：只用1套Q/K/V线性层，投影到总输出维度d_out 参数量骤减，计算效率翻倍
+        # 先把所有头的特征一次性投影出来，再切分，而不是每个头单独投影，本质是「批量处理」
+        self.W_query = torch.nn.Linear(d_in, d_out, bias=qv_bias)
+        self.W_key = torch.nn.Linear(d_in, d_out, bias=qv_bias)
+        self.W_value = torch.nn.Linear(d_in, d_out, bias=qv_bias)
+        # 组合多头的输出 多头输出的融合投影层
+        self.out_proj = torch.nn.Linear(d_out, d_out)
+        # 对注意力权重做随机失活，防止过拟合
+        self.dropout = torch.nn.Dropout(dropout)
+        self.register_buffer("mask",
+                             torch.triu(torch.ones(context_length, context_length), diagonal=1))
+
+
+    def forward(self,x):
+        # 输入shape: [批次, 序列长度, 输入特征维度]
+        b, num_tokens, d_in = x.shape
+        # 步骤1：通过线性层做一次整体投影，得到高维的Q/K/V
+        keys = self.W_key(x) # shape: [b, num_tokens, d_out]
+        queries = self.W_query(x)
+        values = self.W_value(x)
+        # 步骤2：重塑张量，切分成多个注意力头 → 均分特征维度
+        # 核心意义：把原本的高维特征，切分成h个独立的低维子特征，每个子特征对应一个注意力头，每个头只处理自己的d维特征。
+        # d_out = num_heads * head_dim
+        # shape变化：[b, num_tokens, d_out] → [b, num_tokens, num_heads, head_dim]
+        keys = keys.view(b, num_tokens, self.num_heads, self.head_dim)
+        queries = queries.view(b, num_tokens, self.num_heads, self.head_dim)
+        values = values.view(b, num_tokens, self.num_heads, self.head_dim)
+        # 步骤3：转置调整维度顺序，把「头维度」提到前面，方便并行计算 让 PyTorch 可以对h个注意力头做并行计算！
+        # shape变化：[b, num_tokens, num_heads, head_dim] → [b, num_heads, num_tokens, head_dim]
+        # 调整前：批次→序列→头→特征 → 头是第三维，计算时是串行；
+        # 调整后：批次→头→序列→特征 → 头是第二维，所有头可以同时计算注意力，GPU 的并行算力被完全利用，速度提升 h 倍！
+        keys = keys.transpose(1, 2) # 交换张量的第 1 维和第 2 维
+        queries = queries.transpose(1, 2)
+        values = values.transpose(1, 2)
+
+        # 步骤4：计算注意力分数（核心矩阵乘法）
+        # shape 变化：[b,h,n,d] × [b,h,d,n] = [b,h,n,n]
+        # 核心意义：attn_scores[b, h, i, j]
+        # 表示「第 b 个样本、第 h 个注意力头、
+        # 第 i 个 token 对 第 j 个 token 的注意力匹配度」，值越大，越关注。
+        attn_scores = queries @ keys.transpose(2, 3) #把 keys 的[b, num_heads, num_tokens, head_dim] →[b, num_heads ,head_dim, num_tokens]
+
+        # 步骤5：因果掩码，屏蔽未来token的注意力分数
+        mask_bool = self.mask.bool()[:num_tokens, :num_tokens]
+        attn_scores.masked_fill_(mask_bool, -torch.inf)
+
+        # 步骤6：分数缩放 + softmax归一化 → 注意力权重
+        # 对最后一维（序列维度）做归一化，权重之和为 1，得到注意力权重
+        attn_weights = torch.softmax(attn_scores / keys.shape[-1] ** 0.5, dim=-1)
+        attn_weights = self.dropout(attn_weights) # 随机失活防止过拟合
+
+        # 步骤7：权重加权求和V + 恢复维度顺序
+        context_vec = (attn_weights @ values).transpose(1, 2)
+
+        # 步骤8：拼接所有头的输出，恢复成完整维度
+        # torch.contiguous()连续化张量
+        # 作用：因为前面做了多次transpose转置，张量的内存布局会变成「非连续」，此时直接调用view会报错；
+        # contiguous()：重新整理张量的内存布局，变成连续的，不改变张量的值，只为了后续view能正常执行。
+        # torch.view() 核心意义：把h个独立的头特征，在特征维度上拼接成一个完整的特征向量，
+        # 恢复到总输出维度D，完成了「多头特征的拼接」。
+        context_vec = context_vec.contiguous().view(b, num_tokens, self.d_out)
+
+        # 步骤9：多头输出融合投影
+        context_vec=self.out_proj(context_vec)
+        return context_vec
+
 def test_SelfAttentionV2():
     inputs = torch.tensor(
         [[0.43, 0.15, 0.89],  # Your (x^1)
@@ -311,6 +422,7 @@ def test_SelfAttentionV2():
     torch.manual_seed(789)
     sa_v2 = SelfAttentionV2(dim_in, dim_out)
     print(sa_v2(inputs))
+
 
 def test_SelfAttention():
     inputs = torch.tensor(
@@ -333,6 +445,52 @@ def test_SelfAttention():
     context_vecs = ca(batch)
     print("context_vecs.shape:", context_vecs.shape)
 
+def test_MultiHeadAttentionWrapper():
+    inputs = torch.tensor(
+        [[0.43, 0.15, 0.89],  # Your (x^1)
+         [0.55, 0.87, 0.66],  # journey (x^2)
+         [0.57, 0.85, 0.64],  # starts (x^3)
+         [0.22, 0.58, 0.33],  # with (x^4)
+         [0.77, 0.25, 0.10],  # one (x^5)
+         [0.05, 0.80, 0.55]]  # step (x^6)
+    )
+    batch = torch.stack((inputs, inputs), dim=0)
+    print(batch.shape)
+    # 输入嵌入维度
+    dim_in = inputs.shape[1]
+    # 输出嵌入维度
+    dim_out = 2
+    torch.manual_seed(123)
+    context_length = batch.shape[1]  # 这是词元的数量
+    d_in, d_out = 3, 2
+    mha = MultiHeadAttentionWrapper(
+        d_in, d_out, context_length, 0.0, num_heads=2
+    )
+    context_vecs = mha(batch)
+    print(context_vecs)
+    print("context_vecs.shape:", context_vecs.shape)
+
+def test_MultiHeadAttention():
+    inputs = torch.tensor(
+        [[0.43, 0.15, 0.89],  # Your (x^1)
+         [0.55, 0.87, 0.66],  # journey (x^2)
+         [0.57, 0.85, 0.64],  # starts (x^3)
+         [0.22, 0.58, 0.33],  # with (x^4)
+         [0.77, 0.25, 0.10],  # one (x^5)
+         [0.05, 0.80, 0.55]]  # step (x^6)
+    )
+    batch = torch.stack((inputs, inputs), dim=0)
+    print(batch.shape)
+    # 输入嵌入维度
+    dim_in = inputs.shape[1]
+    # 输出嵌入维度
+    dim_out = 2
+    torch.manual_seed(123)
+    batch_size, context_length, d_in = batch.shape
+    mha = MultiHeadAttention(dim_in, dim_out, context_length, 0.0, num_heads=2)
+    context_vecs = mha(batch)
+    print(context_vecs)
+    print("context_vecs.shape:", context_vecs.shape)
 
 if __name__ == "__main__":
-    test_SelfAttention()
+    test_MultiHeadAttention()
