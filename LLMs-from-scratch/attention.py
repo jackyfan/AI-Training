@@ -1,6 +1,4 @@
 import torch
-from sympy.physics.units.systems.si import dimex
-
 """
 自注意力Self Attention是Transformer模型中的一种机制，
 为什么叫「自注意力」？
