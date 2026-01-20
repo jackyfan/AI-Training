@@ -321,7 +321,7 @@ class MultiHeadAttention(torch.nn.Module):
     输出context_vec: [b, n, D]
 
     """
-    def __init__(self, d_in, d_out, context_length, dropout, num_heads, qv_bias=False):
+    def __init__(self, d_in, d_out, context_length, dropout, num_heads, qkv_bias=False):
         super().__init__()
         # 强制校验：输出维度必须能被注意力头数整除，否则无法均分
         # 我们要把d_out这个总维度，平均切分给num_heads个注意力头，
@@ -337,9 +337,9 @@ class MultiHeadAttention(torch.nn.Module):
 
         # 核心：只用1套Q/K/V线性层，投影到总输出维度d_out 参数量骤减，计算效率翻倍
         # 先把所有头的特征一次性投影出来，再切分，而不是每个头单独投影，本质是「批量处理」
-        self.W_query = torch.nn.Linear(d_in, d_out, bias=qv_bias)
-        self.W_key = torch.nn.Linear(d_in, d_out, bias=qv_bias)
-        self.W_value = torch.nn.Linear(d_in, d_out, bias=qv_bias)
+        self.W_query = torch.nn.Linear(d_in, d_out, bias=qkv_bias)
+        self.W_key = torch.nn.Linear(d_in, d_out, bias=qkv_bias)
+        self.W_value = torch.nn.Linear(d_in, d_out, bias=qkv_bias)
         # 组合多头的输出 多头输出的融合投影层
         self.out_proj = torch.nn.Linear(d_out, d_out)
         # 对注意力权重做随机失活，防止过拟合
