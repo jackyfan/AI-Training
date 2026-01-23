@@ -1,3 +1,7 @@
+from matplotlib.lines import lineStyles
+from matplotlib.pyplot import figure
+from sympy.benchmarks.bench_meijerint import alpha
+
 from gpt import GPTModel
 import torch
 import tiktoken
@@ -19,6 +23,7 @@ def token_ids_to_text(token_ids, tokenizer):
     decode = tokenizer.decode(flat.tolist())
     return decode
 
+
 # 计算单个批次的损失
 def calc_loss_batch(input_batch, target_batch, model, device):
     # to(devices)可以将数据转移到GPU上
@@ -29,6 +34,7 @@ def calc_loss_batch(input_batch, target_batch, model, device):
         logits.flatten(0, 1), target_batch.flatten()
     )
     return loss
+
 
 # 计算数据加载器采样的所有批次的损失
 def calc_loss_loader(data_loader, model, device, num_batches=None):
@@ -51,7 +57,7 @@ def calc_loss_loader(data_loader, model, device, num_batches=None):
             total_loss += loss.item()
         else:
             break
-    #对所有批次的损失求平均值
+    # 对所有批次的损失求平均值
     return total_loss / num_batches
 
 
@@ -75,7 +81,7 @@ def train_model_simple(model, train_loader, val_loader,
             # 3. 反向传播：计算模型参数的梯度（从loss反向推导每个参数的梯度）
             loss.backward()
             # 4. 优化器更新：用梯度更新模型参数（如AdamW根据梯度调整权重）
-            optimizer.step() # numel()返回张量总元素数（即批次词元数）
+            optimizer.step()  # numel()返回张量总元素数（即批次词元数）
             # 5. 累计统计：更新已处理词元数、全局步数
             tokens_seen += input_batch.numel()
             global_step += 1
@@ -91,7 +97,7 @@ def train_model_simple(model, train_loader, val_loader,
                 val_losses.append(val_loss)
                 track_tokens_seen.append(tokens_seen)
                 # 打印监控信息：轮数、步数、训练/验证损失（保留3位小数）
-                print(f"Epoch: {epoch+1}, Step: {global_step:06d}, "
+                print(f"Epoch: {epoch + 1}, Step: {global_step:06d}, "
                       f"Train loss: {train_loss:.3f}, "
                       f"Val loss: {val_loss:.3f}")
         # 训练轮结束后，用指定的start_context生成文本，直观查看模型训练效果
@@ -131,30 +137,32 @@ def generate_and_print_sample(model, tokenizer, device, start_context):
     # .to(device)：将张量移至GPU/CPU（与模型设备一致，避免数据位置不匹配报错）
     encoded = text_to_token_ids(start_context, tokenizer).to(device)
     # ===================== 第四步：生成新文本（核心） =====================
-    with torch.no_grad(): # 关闭梯度计算：生成阶段无需更新参数，节省显存+加速
+    with torch.no_grad():  # 关闭梯度计算：生成阶段无需更新参数，节省显存+加速
         token_ids = generate_text_simple(
             model=model,
-            idx=encoded,# 起始token ID（提示词的编码结果）
-            max_new_tokens=50,# 最多生成50个新token
-            context_size=context_size# 模型支持的最大上下文长度（防止越界）
+            idx=encoded,  # 起始token ID（提示词的编码结果）
+            max_new_tokens=50,  # 最多生成50个新token
+            context_size=context_size  # 模型支持的最大上下文长度（防止越界）
         )
     # ===================== 第五步：解码token ID为可读文本 =====================
     # token_ids_to_text：自定义函数，将生成的token ID张量转回字符串
     decoded_text = token_ids_to_text(token_ids, tokenizer)
     # ===================== 第六步：格式化并打印生成结果 =====================
     # .replace("\n"," ")：将换行符替换为空格，避免打印时换行混乱，方便查看完整文本
-    print(decoded_text.replace("\n"," "))
+    print(decoded_text.replace("\n", " "))
     # ===================== 第三步：切回「训练模式」 =====================
     # 核心：不影响后续训练（比如下一个批次的Dropout需要重新启用）
     model.train()
 
-def test_generate_text_simple(model,gpt_cfg):
+
+def test_generate_text_simple(model, gpt_cfg):
     tokenizer = tiktoken.get_encoding("gpt2")
     ids = text_to_token_ids("Every effort moves you", tokenizer)
-    token_ids = generate_text_simple(model=model,idx=ids,
+    token_ids = generate_text_simple(model=model, idx=ids,
                                      max_new_tokens=10,
                                      context_size=gpt_cfg["context_length"])
-    print("Out text:\n",token_ids_to_text(token_ids, tokenizer))
+    print("Out text:\n", token_ids_to_text(token_ids, tokenizer))
+
 
 def calc_text_token_length(text):
     tokenizer = tiktoken.get_encoding("gpt2")
@@ -163,8 +171,30 @@ def calc_text_token_length(text):
     print("Characters:", total_characters)
     print("Tokens:", total_tokens)
 
-def plot_losses(epochs_seen,tokens_seen,train_losses,val_losses):
-    fig,ax1 = plt.s
+
+def plot_losses(epochs_seen, tokens_seen, train_losses, val_losses):
+    # ===================== 第一步：创建画布与主坐标轴 =====================
+    # fig：画布对象；ax1：主坐标轴（处理损失曲线）；figsize=(5,3)设置画布大小（宽5，高3）
+    fig, ax1 = plt.subplots(figsize=(5, 3))
+    # ===================== 第二步：绘制主坐标轴曲线（损失） =====================
+    # 绘制训练损失：实线，标注"Training Loss"
+    ax1.plot(epochs_seen, train_losses, label="Training Loss")
+    # 绘制验证损失：点划线，标注"Validation Loss"
+    ax1.plot(epochs_seen, val_losses, linestyle='-.', label="Validation Loss")
+    # ===================== 第三步：主坐标轴格式设置 =====================
+    ax1.set_xlabel("Epochs")  # 主x轴标签：训练轮数
+    ax1.set_ylabel("Loss")  # 主y轴标签：损失值
+    ax1.legend(loc="upper right")  # 图例位置：右上角
+    # 强制x轴刻度为整数（轮数不可能是小数）
+    ax1.xaxis.set_major_locator(MaxNLocator(integer=True))
+    # ===================== 第四步：创建次坐标轴（核心问题点） =====================
+    ax2 = ax1.twiny()  # 创建共享y轴、独立x轴的次坐标轴（本应展示tokens_seen）
+    # 问题1：alpha=0 → 曲线完全透明，看不到
+    ax2.plot(epochs_seen, tokens_seen, alpha=0)
+    ax2.set_xlabel("Tokens Seen")
+    # ===================== 第五步：布局与显示 =====================
+    fig.tight_layout()  # 自动调整布局，避免标签重叠
+    plt.show()  # 显示图表
 
 
 if __name__ == "__main__":
@@ -232,3 +262,5 @@ if __name__ == "__main__":
         num_epochs=num_epochs, eval_freq=5, eval_iter=5,
         start_context="Every effort moves you", tokenizer=tokenizer
     )
+    epochs_tensor = torch.linspace(0, num_epochs, len(train_losses))
+    plot_losses(epochs_tensor, tokens_seen, train_losses, val_losses)
