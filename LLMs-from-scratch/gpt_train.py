@@ -190,7 +190,7 @@ def plot_losses(epochs_seen, tokens_seen, train_losses, val_losses):
     # ===================== 第四步：创建次坐标轴（核心问题点） =====================
     ax2 = ax1.twiny()  # 创建共享y轴、独立x轴的次坐标轴（本应展示tokens_seen）
     # 问题1：alpha=0 → 曲线完全透明，看不到
-    ax2.plot(epochs_seen, tokens_seen, alpha=0)
+    ax2.plot(tokens_seen,train_losses, alpha=0)
     ax2.set_xlabel("Tokens Seen")
     # ===================== 第五步：布局与显示 =====================
     fig.tight_layout()  # 自动调整布局，避免标签重叠
