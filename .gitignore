@@ -47,3 +47,5 @@ nbdist/
 !*/build/*.xml
 
 *.pyc
+
+LLMs-from-scratch/datas/*
