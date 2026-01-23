@@ -1,6 +1,3 @@
-from matplotlib.lines import lineStyles
-from matplotlib.pyplot import figure
-from sympy.benchmarks.bench_meijerint import alpha
 
 from gpt import GPTModel
 import torch
