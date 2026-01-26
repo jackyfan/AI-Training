@@ -51,8 +51,9 @@ class InstructionDataset(Dataset):
     def __getitem__(self, idx):
         return self.encoded_text[idx]
 
+
 # 聚合函数来实现填充自动补齐
-def custom_collate_draft_1(batch,pad_token_id=50256,device="cpu"):
+def custom_collate_draft_1(batch, pad_token_id=50256, device="cpu"):
     batch_max_length = max(len(item) + 1 for item in batch)
     inputs_lst = []
     for item in batch:
@@ -66,6 +67,25 @@ def custom_collate_draft_1(batch,pad_token_id=50256,device="cpu"):
         inputs_lst.append(inputs)
     inputs_tensor = torch.stack(inputs_lst).to(device)
     return inputs_tensor
+
+
+def custom_collate_draft_2(batch,pad_token_id=50256,device="cpu"):
+    batch_max_length = max(len(item) + 1 for item in batch)
+    inputs_lst, targets_lst = [], []
+    for item in batch:
+        new_item = item.copy()
+        new_item += [pad_token_id]
+        padded = (
+                new_item + [pad_token_id] *
+                (batch_max_length - len(new_item))
+        )
+        inputs = torch.tensor(padded[:-1])
+        targets = torch.tensor(padded[1:])
+        inputs_lst.append(inputs)
+        targets_lst.append(targets)
+    inputs_tensor = torch.stack(inputs_lst).to(device)
+    targets_tensor = torch.stack(targets_lst).to(device)
+    return inputs_tensor, targets_tensor
 
 
 if __name__ == "__main__":
