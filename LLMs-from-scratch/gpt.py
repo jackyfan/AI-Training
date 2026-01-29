@@ -151,27 +151,38 @@ class GPTModel(nn.Module):
     def __init__(self, cfg):
         super().__init__()
         self.tok_emb = nn.Embedding(cfg["vocab_size"], cfg["emb_dim"])
-        self.pos_emb = nn.Embedding(cfg["context_length"], cfg["emb_dim"])
-        self.drop_emb = nn.Dropout(cfg["drop_rate"])
+        self.pos_emb = nn.Embedding(cfg["context_length"], cfg["emb_dim"]) # 位置嵌入层：为模型注入位置信息
+        self.drop_emb = nn.Dropout(cfg["drop_rate"])  #嵌入层 Dropout：防止过拟合
+        # 模型的核心能力层，通过多层Transformer块的堆叠，对嵌入向量进行层层特征提取，捕捉文本中的长距离依赖、语法结构、语义关联等信息
         self.trf_blocks = nn.Sequential(
             *[TransformerBlock(cfg)
               for _ in range(cfg["n_layers"])]
         )
+        # 最终归一化层：稳定输出特征分布
         self.final_norm = LayerNorm(cfg["emb_dim"])
+        # 输出头：将特征向量映射为词汇表概率
         self.out_head = nn.Linear(
             cfg["emb_dim"], cfg["vocab_size"], bias=False
         )
 
     def forward(self, in_idx):
         batch_size, seq_len = in_idx.shape
+        # 计算词嵌入向量
         tok_embeds = self.tok_emb(in_idx)
+        # 计算位置嵌入向量
         pos_embeds = self.pos_emb(
             torch.arange(seq_len, device=in_idx.device)
         )
+        # 融合词嵌入和位置嵌入
+        # 核心逻辑：将 语义信息（词嵌入）和位置信息（位置嵌入）融合，让模型同时理解 “token的含义” 和 “token在序列中的位置”。
         x = tok_embeds + pos_embeds
+        # 嵌入层 Dropout
         x = self.drop_emb(x)
+        # 通过 Transformer 块堆叠提取特征
         x = self.trf_blocks(x)
+        # 最终归一化
         x = self.final_norm(x)
+        # 输出头计算 logits
         logits = self.out_head(x)
         return logits
 
@@ -181,7 +192,7 @@ def generate_text_simple(model, idx, max_new_tokens, context_size):
         idx_cond = idx[:, -context_size:]
         with torch.no_grad():
             logits = model(idx_cond)
-        logits = logits[:, -1, :]
+        logits = logits[:, -1, :] #取最后一个维度的概率
         probas = torch.softmax(logits, dim=-1)
         idx_next = torch.argmax(probas, dim=-1, keepdim=True)
         idx = torch.cat([idx, idx_next], dim=-1)
