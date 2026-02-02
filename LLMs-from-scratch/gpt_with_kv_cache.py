@@ -61,6 +61,7 @@ class TransformerBlock(nn.Module):
     def forward(self, x, use_cache=False):
         shortcut = x
         x = self.norm1(x)
+        # 增加缓存
         x = self.att(x, use_cache=use_cache)
         x = self.drop_shortcut(x)
         x = x + shortcut
@@ -203,6 +204,7 @@ class GPTModel(nn.Module):
             [TransformerBlock(cfg)
              for _ in range(cfg["n_layers"])]
         )
+        self.current_pos = 0
         # 最终归一化层：稳定输出特征分布
         self.final_norm = LayerNorm(cfg["emb_dim"])
         # 输出头：将特征向量映射为词汇表概率
@@ -210,21 +212,28 @@ class GPTModel(nn.Module):
             cfg["emb_dim"], cfg["vocab_size"], bias=False
         )
 
-    def forward(self, in_idx):
+    def forward(self, in_idx,use_cache=False):
         batch_size, seq_len = in_idx.shape
         # 计算词嵌入向量
         tok_embeds = self.tok_emb(in_idx)
         # 计算位置嵌入向量
-        pos_embeds = self.pos_emb(
-            torch.arange(seq_len, device=in_idx.device)
-        )
+        # pos_embeds = self.pos_emb(torch.arange(seq_len, device=in_idx.device))
+        ### 缓存
+        if use_cache:
+            pos_ids = torch.arange(self.current_pos, self.current_pos + seq_len,device=in_idx.device, dtype=torch.long)
+            self.current_pos += seq_len
+        else:
+            pos_ids = torch.arange(0,seq_len, device=in_idx.device,dtype=torch.long)
+        pos_embeds = self.pos_emb(pos_ids).unsqueeze(0)
         # 融合词嵌入和位置嵌入
         # 核心逻辑：将 语义信息（词嵌入）和位置信息（位置嵌入）融合，让模型同时理解 “token的含义” 和 “token在序列中的位置”。
         x = tok_embeds + pos_embeds
         # 嵌入层 Dropout
         x = self.drop_emb(x)
         # 通过 Transformer 块堆叠提取特征
-        x = self.trf_blocks(x)
+        # x = self.trf_blocks(x)
+        for blk in self.trf_blocks:
+            x = blk(x, use_cache)
         # 最终归一化
         x = self.final_norm(x)
         # 输出头计算 logits
