@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import tiktoken
+import time
 
 
 class LayerNorm(nn.Module):
@@ -333,17 +334,31 @@ def main():
     print("\nInput text:", start_context)
     print("Encoded input text:", encoded)
     print("encoded_tensor.shape:", encoded_tensor.shape)
+    if torch.cuda.is_available():
+        torch.cuda.synchronize()
+    start = time.time()
 
     model.eval()  # disable dropout
-    out = generate_text_simple(model,
+    token_ids  = generate_text_simple_cached(model,
                                encoded_tensor,
-                               max_new_tokens=6,
-                               context_size=GPT_CONFIG_124M["context_length"])
-    print("Output:", out)
-    print("Output length:", len(out[0]))
+                               max_new_tokens=200)
+    if torch.cuda.is_available():
+        torch.cuda.synchronize()
+    total_time = time.time() - start
 
-    decoded_text = tokenizer.decode(out.squeeze(0).tolist())
-    print(decoded_text)
+    decoded_text = tokenizer.decode(token_ids.squeeze(0).tolist())
+
+    print(f"\n\n{50 * '='}\n{22 * ' '}OUT\n{50 * '='}")
+    print("\nOutput:", token_ids)
+    print("Output length:", len(token_ids[0]))
+    print("Output text:", decoded_text)
+
+    print(f"\nTime: {total_time:.2f} sec")
+    print(f"{int(len(token_ids[0]) / total_time)} tokens/sec")
+    if torch.cuda.is_available():
+        max_mem_bytes = torch.cuda.max_memory_allocated()
+        max_mem_gb = max_mem_bytes / (1024 ** 3)
+        print(f"Max memory allocated: {max_mem_gb:.2f} GB")
 
 
 if __name__ == "__main__":

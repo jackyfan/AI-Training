@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 from attention import MultiHeadAttention
 import tiktoken
+import time
 
 
 class DummyModel(nn.Module):
@@ -228,15 +229,24 @@ def main():
     print("encoded_tensor.shape:", encoded_tensor.shape)
 
     model.eval()  # disable dropout
-    out = generate_text_simple(model,
+    start = time.time()
+    token_ids = generate_text_simple(model,
                                encoded_tensor,
-                               max_new_tokens=6,
+                               max_new_tokens=200,
                                context_size=GPT_CONFIG_124M["context_length"])
-    print("Output:", out)
-    print("Output length:", len(out[0]))
+    #print("Output:", token_ids)
+    print("Output length:", len(token_ids[0]))
+    total_time = time.time() - start
 
-    decoded_text = tokenizer.decode(out.squeeze(0).tolist())
+    decoded_text = tokenizer.decode(token_ids.squeeze(0).tolist())
     print(decoded_text)
+    print(f"\n\n{50 * '='}\n{22 * ' '}OUT\n{50 * '='}")
+    print("\nOutput:", token_ids)
+    print("Output length:", len(token_ids[0]))
+    print("Output text:", decoded_text)
+
+    print(f"\nTime: {total_time:.2f} sec")
+    print(f"{int(len(token_ids[0]) / total_time)} tokens/sec")
 
 if __name__ == "__main__":
     main()
