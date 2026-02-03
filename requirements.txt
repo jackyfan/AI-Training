@@ -2,5 +2,5 @@ tiktoken
 matplotlib
 tensorflow>=2.15.0
 tqdm>=4.6
-torch
-numpy
+torch==2.1.0
+numpy==1.26.4
