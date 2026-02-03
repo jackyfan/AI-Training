@@ -261,6 +261,54 @@ def generate_text_simple(model, idx, max_new_tokens, context_size):
     return idx
 
 
+def generate_text_simple_cached(model, idx, max_new_tokens,
+                                context_size=None, use_cache=True):
+    """
+        基于自回归的LLM文本生成函数，支持KV Cache缓存优化（贪心采样）
+        :param model: 训练完成的LLM模型（需实现KV Cache接口）
+        :param idx: 初始token索引张量，shape [batch_size, seq_len]
+        :param max_new_tokens: 最大生成新token数量
+        :param context_size: 最大上下文窗口长度，None则使用模型默认值
+        :param use_cache: 是否启用KV Cache加速
+        :return: 原始+生成的完整token索引张量
+        """
+    # 1. 将模型设为评估模式，禁用训练相关层（Dropout/BatchNorm等），保证推理一致性
+    model.eval()
+    # 2. 确定模型推理的最大上下文窗口长度：优先用传入的context_size，否则用模型位置嵌入层的最大长度
+    # model.pos_emb.num_embeddings → 位置嵌入层的嵌入数量，即模型预定义的最大上下文长度
+    ctx_len = context_size or model.pos_emb.num_embeddings
+    # 3. 禁用梯度计算：推理阶段无需反向传播，大幅减少显存占用、提升推理速度
+    with torch.no_grad():
+        if use_cache:
+            # 3.1 重置模型的KV Cache缓存区：生成新序列前清空历史缓存，避免跨任务污染
+            model.reset_kv_cache()
+            # 3.2 首次前向传播：输入取最后ctx_len个token（防止超出上下文窗口），开启cache
+            # 作用：计算初始序列的logits，并将历史token的K/V存入缓存区
+            logits = model(idx[:, -ctx_len:], use_cache=True)
+            # 3.3 自回归循环生成max_new_tokens个新token
+            for _ in range(max_new_tokens):
+                # 3.4 贪心采样：取最后一个位置的logits，按最后一维取argmax（得分最高的token）
+                # keepdim=True → 保持维度为[batch_size, 1]，避免维度坍塌，方便后续拼接
+                next_idx = logits[:, -1].argmax(dim=-1, keepdim=True)
+                # 3.5 拼接新token：将生成的next_idx拼接到原始idx后，更新输入序列
+                idx = torch.cat([idx, next_idx], dim=1)
+                # 3.6 后续前向传播：仅输入新生成的单个token，开启cache
+                # 核心优化：模型从缓存中读取历史K/V，仅计算新token的注意力，无需重复计算历史
+                logits = model(next_idx, use_cache=True)
+        else:
+            # 3.7 自回归循环生成max_new_tokens个新token
+            for _ in range(max_new_tokens):
+                # 3.8 每次前向传播都输入最后ctx_len个token，禁用cache
+                # 缺点：重复计算所有历史token的注意力，生成越长，速度越慢
+                logits = model(idx[:, -ctx_len:], use_cache=False)
+                # 3.9 贪心采样获取下一个token
+                next_idx = logits[:, -1].argmax(dim=-1, keepdim=True)
+                # 3.10 同分支1，拼接新token更新输入序列
+                idx = torch.cat([idx, next_idx], dim=1)
+
+    return idx
+
+
 def main():
     GPT_CONFIG_124M = {
         "vocab_size": 50257,  # 词汇表大小
