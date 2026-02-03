@@ -155,6 +155,8 @@ class GPTModel(nn.Module):
         self.drop_emb = nn.Dropout(cfg["drop_rate"])  #嵌入层 Dropout：防止过拟合
         # nn.Sequential：仅支持固定的线性执行逻辑，无法实现任何自定义调度，适合逻辑简单、无需额外控制的场景。
         # 模型的核心能力层，通过多层Transformer块的堆叠，对嵌入向量进行层层特征提取，捕捉文本中的长距离依赖、语法结构、语义关联等信息
+        # * 解包，将List分解成一个个元素，并作为参数传入Sequential
+        # 比如 nn.Sequential([TransformerBlock(cfg), TransformerBlock(cfg), TransformerBlock(cfg)])
         self.trf_blocks = nn.Sequential(
             *[TransformerBlock(cfg)
               for _ in range(cfg["n_layers"])]
