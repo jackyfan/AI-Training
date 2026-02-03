@@ -153,6 +153,7 @@ class GPTModel(nn.Module):
         self.tok_emb = nn.Embedding(cfg["vocab_size"], cfg["emb_dim"])
         self.pos_emb = nn.Embedding(cfg["context_length"], cfg["emb_dim"]) # 位置嵌入层：为模型注入位置信息
         self.drop_emb = nn.Dropout(cfg["drop_rate"])  #嵌入层 Dropout：防止过拟合
+        # nn.Sequential：仅支持固定的线性执行逻辑，无法实现任何自定义调度，适合逻辑简单、无需额外控制的场景。
         # 模型的核心能力层，通过多层Transformer块的堆叠，对嵌入向量进行层层特征提取，捕捉文本中的长距离依赖、语法结构、语义关联等信息
         self.trf_blocks = nn.Sequential(
             *[TransformerBlock(cfg)

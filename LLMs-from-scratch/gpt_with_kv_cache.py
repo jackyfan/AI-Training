@@ -199,7 +199,9 @@ class GPTModel(nn.Module):
         self.tok_emb = nn.Embedding(cfg["vocab_size"], cfg["emb_dim"])
         self.pos_emb = nn.Embedding(cfg["context_length"], cfg["emb_dim"])  # 位置嵌入层：为模型注入位置信息
         self.drop_emb = nn.Dropout(cfg["drop_rate"])  # 嵌入层 Dropout：防止过拟合
+        # nn.ModuleList：是实现自定义执行逻辑的唯一选择，比如大模型中的「动态层选择」「MoE（混合专家模型）的层调度」「推理时的层裁剪」等，都需要通过nn.ModuleList手动控制；
         # 模型的核心能力层，通过多层Transformer块的堆叠，对嵌入向量进行层层特征提取，捕捉文本中的长距离依赖、语法结构、语义关联等信息
+        # 在forward方法 必须手动循环，显式传递数据
         self.trf_blocks = nn.ModuleList(
             [TransformerBlock(cfg)
              for _ in range(cfg["n_layers"])]
@@ -212,7 +214,7 @@ class GPTModel(nn.Module):
             cfg["emb_dim"], cfg["vocab_size"], bias=False
         )
 
-    def forward(self, in_idx,use_cache=False):
+    def forward(self, in_idx, use_cache=False):
         batch_size, seq_len = in_idx.shape
         # 计算词嵌入向量
         tok_embeds = self.tok_emb(in_idx)
@@ -220,10 +222,10 @@ class GPTModel(nn.Module):
         # pos_embeds = self.pos_emb(torch.arange(seq_len, device=in_idx.device))
         ### 缓存
         if use_cache:
-            pos_ids = torch.arange(self.current_pos, self.current_pos + seq_len,device=in_idx.device, dtype=torch.long)
+            pos_ids = torch.arange(self.current_pos, self.current_pos + seq_len, device=in_idx.device, dtype=torch.long)
             self.current_pos += seq_len
         else:
-            pos_ids = torch.arange(0,seq_len, device=in_idx.device,dtype=torch.long)
+            pos_ids = torch.arange(0, seq_len, device=in_idx.device, dtype=torch.long)
         pos_embeds = self.pos_emb(pos_ids).unsqueeze(0)
         # 融合词嵌入和位置嵌入
         # 核心逻辑：将 语义信息（词嵌入）和位置信息（位置嵌入）融合，让模型同时理解 “token的含义” 和 “token在序列中的位置”。
@@ -232,6 +234,7 @@ class GPTModel(nn.Module):
         x = self.drop_emb(x)
         # 通过 Transformer 块堆叠提取特征
         # x = self.trf_blocks(x)
+        # nn.ModuleList 必须手动循环，显式传递数据
         for blk in self.trf_blocks:
             x = blk(x, use_cache)
         # 最终归一化
@@ -239,6 +242,11 @@ class GPTModel(nn.Module):
         # 输出头计算 logits
         logits = self.out_head(x)
         return logits
+
+    def reset_kv_cache(self):
+        for blk in self.trf_blocks:
+            blk.att.reset_cache()
+        self.current_pos = 0
 
 
 def generate_text_simple(model, idx, max_new_tokens, context_size):
