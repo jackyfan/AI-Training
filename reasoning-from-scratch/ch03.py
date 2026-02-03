@@ -45,11 +45,17 @@ def load_model_and_tokenizer(which_model, device, use_compile, local_dir="qwen3"
 
 
 
-WHICH_MODEL = "base"
-device = get_device()
-model, tokenizer = load_model_and_tokenizer(
-    which_model=WHICH_MODEL,
-    device=device,
-    use_compile=False
-)
-print(model)
+
+
+def test_load_model_and_tokenizer():
+    WHICH_MODEL = "base"
+    device = get_device()
+    model, tokenizer = load_model_and_tokenizer(
+        which_model=WHICH_MODEL,
+        device=device,
+        use_compile=False
+    )
+    print(model)
+
+if __name__ == "__main__":
+    test_load_model_and_tokenizer()
