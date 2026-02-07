@@ -1,5 +1,6 @@
-
 import torch
+import torch.nn as nn
+
 
 def step_by_by_step_attention():
     # ===================== 第一步：文本预处理 + 构建词汇表映射 =====================
@@ -15,7 +16,7 @@ def step_by_by_step_attention():
     # 3. sorted()：对单词列表按字母顺序排序 → ['Life', 'dessert', 'eat', 'first', 'is', 'short']
     # 4. enumerate()：遍历排序后的列表，生成(索引, 单词)对 → (0,'Life'), (1,'dessert'), ..., (5,'short')
     # 5. {s:i for i,s in ...}：字典推导式，最终得到"单词:索引"的映射（key是单词，value是索引）
-    dc = {s:i for i,s in enumerate(sorted(sentence.replace(',', '').split()))}
+    dc = {s: i for i, s in enumerate(sorted(sentence.replace(',', '').split()))}
     print(dc)  # 输出：{'Life':0, 'dessert':1, 'eat':2, 'first':3, 'is':4, 'short':5}
 
     # ===================== 第二步：文本→数字编码（Tokenization） =====================
@@ -59,11 +60,11 @@ def step_by_by_step_attention():
     # 定义可学习的投影矩阵（nn.Parameter：标记为模型可训练参数）
     # torch.rand(d, d_q)：生成d×d_q的随机矩阵（这里是3×2），对应Query投影
     W_query = torch.nn.Parameter(torch.rand(d, d_q))
-    W_key = torch.nn.Parameter(torch.rand(d, d_k))   # Key投影矩阵（3×2）
-    W_value = torch.nn.Parameter(torch.rand(d, d_v)) # Value投影矩阵（3×4）
+    W_key = torch.nn.Parameter(torch.rand(d, d_k))  # Key投影矩阵（3×2）
+    W_value = torch.nn.Parameter(torch.rand(d, d_v))  # Value投影矩阵（3×4）
 
     print(W_query.shape)  # 输出：torch.Size([3, 2])
-    print(W_key.shape)    # 输出：torch.Size([3, 2])
+    print(W_key.shape)  # 输出：torch.Size([3, 2])
     print(W_value.shape)  # 输出：torch.Size([3, 4])
 
     # ===================== 第五步：单个token的Q/K/V计算（以第2个token为例） =====================
@@ -77,7 +78,7 @@ def step_by_by_step_attention():
 
     # Key投影：x_2（3维） @ W_key（3×2） → 得到2维Key向量
     key_2 = x_2 @ W_key
-    print(key_2.shape)    # 输出：torch.Size([2])
+    print(key_2.shape)  # 输出：torch.Size([2])
 
     # Value投影：x_2（3维） @ W_value（3×4） → 得到4维Value向量
     value_2 = x_2 @ W_value
@@ -90,8 +91,8 @@ def step_by_by_step_attention():
     values = embedded_sentence @ W_value
 
     print("embedded_sentence.shape:", embedded_sentence.shape)  # torch.Size([6, 3])
-    print("keys.shape:", keys.shape)                            # torch.Size([6, 2])
-    print("values.shape:", values.shape)                        # torch.Size([6, 4])
+    print("keys.shape:", keys.shape)  # torch.Size([6, 2])
+    print("values.shape:", values.shape)  # torch.Size([6, 4])
 
     # ===================== 第七步：注意力分数计算（核心：衡量token间的关联度） =====================
     # omega_24：计算第2个token的Query与第5个token的Key的点积（注意力分数）
@@ -111,7 +112,7 @@ def step_by_by_step_attention():
     # 核心操作：计算注意力权重（Softmax归一化，除以√d_k是为了防止分数过大）
     # 1. omega_2 / d_k**0.5：缩放注意力分数（d_k=2，√2≈1.414）
     # 2. F.softmax(..., dim=0)：在第0维做softmax，使所有权重和为1
-    attention_weights_2 = F.softmax(omega_2 / d_k**0.5, dim=0)
+    attention_weights_2 = F.softmax(omega_2 / d_k ** 0.5, dim=0)
     print(attention_weights_2)  # 输出6个权重值，总和=1（比如：[0.1, 0.2, 0.15, 0.25, 0.1, 0.2]）
 
     # ===================== 第九步：计算上下文向量（注意力加权求和） =====================
@@ -119,19 +120,18 @@ def step_by_by_step_attention():
     # attention_weights_2(6维) @ values(6×4) → 4维上下文向量
     context_vector_2 = attention_weights_2 @ values
     print(context_vector_2.shape)  # 输出：torch.Size([4])
-    print(context_vector_2)        # 输出4维上下文向量（第2个token的最终注意力输出）
+    print(context_vector_2)  # 输出4维上下文向量（第2个token的最终注意力输出）
 
 
-
-class SelfAttention(torch.nn.Module):
-    def __init__(self,d_in,d_out_kq, d_out_v):
+class SelfAttention(nn.Module):
+    def __init__(self, d_in, d_out_kq, d_out_v):
         super().__init__()
         self.d_out_kq = d_out_kq
         self.W_query = torch.nn.Parameter(torch.rand(d_in, d_out_kq))
         self.W_key = torch.nn.Parameter(torch.rand(d_in, d_out_kq))
         self.W_value = torch.nn.Parameter(torch.rand(d_in, d_out_v))
 
-    def forward(self,x):
+    def forward(self, x):
         queries = x @ self.W_query
         keys = x @ self.W_key
         values = x @ self.W_value
@@ -142,6 +142,19 @@ class SelfAttention(torch.nn.Module):
         context_vector = attn_weights @ values
         return context_vector
 
+
+class MultiHeadAttentionWrapper(nn.Module):
+    def __init__(self, d_in, d_out_kq, d_out_v, num_heads):
+        super().__init__()
+        self.heads = nn.ModuleList([
+            SelfAttention(d_in, d_out_kq, d_out_v)
+            for _ in range(num_heads)
+        ])
+
+    def forward(self, x):
+        return torch.cat([h(x) for h in self.heads], dim=-1)
+
+
 if __name__ == "__main__":
     sentence = 'Life is short, eat dessert first'
     dc = {s: i for i, s in enumerate(sorted(sentence.replace(',', '').split()))}
@@ -151,7 +164,14 @@ if __name__ == "__main__":
     embed = torch.nn.Embedding(vocab_size, 3)
     embedded_sentence = embed(sentence_int).detach()
     torch.manual_seed(123)
-    d_in, d_out_kq, d_out_v = 3, 2, 4
+    d_in, d_out_kq, d_out_v = 3, 2, 1
     sa = SelfAttention(d_in, d_out_kq, d_out_v)
     print(sa(embedded_sentence))
-    step_by_by_step_attention()
+    torch.manual_seed(123)
+    block_size = embedded_sentence.shape[1]
+    mha = MultiHeadAttentionWrapper(
+        d_in, d_out_kq, d_out_v, num_heads=4
+    )
+    context_vecs = mha(embedded_sentence)
+    print(context_vecs)
+    print("context_vecs.shape:", context_vecs.shape)
