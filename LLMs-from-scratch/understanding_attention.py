@@ -34,7 +34,7 @@ def step_by_by_step_attention():
     # 50_000中的下划线是Python数字分隔符，仅提升可读性，等价于50000
     vocab_size = 50_000
 
-    # 设置随机种子：固定所有随机操作的结果，保证实验可复现（谷歌工程方法论核心）
+    # 设置随机种子：固定所有随机操作的结果，保证实验可复现（谷歌工程方法论核心）c
     torch.manual_seed(123)
 
     # 创建词嵌入层：nn.Embedding(词汇表大小, 嵌入维度)
@@ -124,11 +124,11 @@ def step_by_by_step_attention():
 
 
 class SelfAttention(torch.nn.Module):
-    def __init__(self,d_in,d_out_qk, d_out_v):
+    def __init__(self,d_in,d_out_kq, d_out_v):
         super().__init__()
-        self.d_out_qk = d_out_qk
-        self.W_query = torch.nn.Parameter(torch.rand(d_in, d_out_qk))
-        self.W_key = torch.nn.Parameter(torch.rand(d_in, d_out_qk))
+        self.d_out_kq = d_out_kq
+        self.W_query = torch.nn.Parameter(torch.rand(d_in, d_out_kq))
+        self.W_key = torch.nn.Parameter(torch.rand(d_in, d_out_kq))
         self.W_value = torch.nn.Parameter(torch.rand(d_in, d_out_v))
 
     def forward(self,x):
@@ -141,3 +141,17 @@ class SelfAttention(torch.nn.Module):
         )
         context_vector = attn_weights @ values
         return context_vector
+
+if __name__ == "__main__":
+    sentence = 'Life is short, eat dessert first'
+    dc = {s: i for i, s in enumerate(sorted(sentence.replace(',', '').split()))}
+    sentence_int = torch.tensor([dc[s] for s in sentence.replace(',', '').split()])
+    vocab_size = 50_000
+    torch.manual_seed(123)
+    embed = torch.nn.Embedding(vocab_size, 3)
+    embedded_sentence = embed(sentence_int).detach()
+    torch.manual_seed(123)
+    d_in, d_out_kq, d_out_v = 3, 2, 4
+    sa = SelfAttention(d_in, d_out_kq, d_out_v)
+    print(sa(embedded_sentence))
+    step_by_by_step_attention()
