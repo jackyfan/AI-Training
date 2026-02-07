@@ -101,9 +101,8 @@ def generate_text_stream_concat(
             )
     return tokenizer.decode(generated_ids)
 
-
 if __name__ == "__main__":
-    # test_load_model_and_tokenizer()
+    #test_load_model_and_tokenizer()
     prompt = (
         r"If $a+b=3$ and $ab=\tfrac{13}{6}$, "
         r"what is the value of $a^2+b^2$?，使用中文回答"

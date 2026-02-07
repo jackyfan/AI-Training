@@ -1,18 +1,20 @@
 import torch
-import numpy
+
 
 def main():
-    # 检查PyTorch版本是否为2.1.0
-    print("PyTorch版本：", torch.__version__)  # 输出2.1.0即正确
-    # 检查是否支持CUDA（核心：RTX 3060能否被调用）
-    print("是否支持CUDA：", torch.cuda.is_available())  # 必须返回True
-    # 检查显卡数量、名称（确认调用的是RTX 3060）
-    print("GPU数量：", torch.cuda.device_count())  # 至少1
-    print("GPU名称：", torch.cuda.get_device_name(0))  # 输出NVIDIA GeForce RTX 3060
-    # 测试GPU张量计算（验证算力正常）
-    x = torch.tensor([1, 2, 3]).cuda()
-    print("GPU张量：", x)  # 输出tensor([1,2,3], device='cuda:0')即成功
-    print("NumPy版本：", numpy.__version__)  # 预期输出：1.26.x/1.25.x等1.x系列
+    # 1. 检查PyTorch版本和CUDA支持
+    print(f"PyTorch版本： {torch.__version__}")
+    print(f"是否支持CUDA： {torch.cuda.is_available()}")
+    print(f"GPU数量： {torch.cuda.device_count()}")
+
+    # 2. 只有CUDA可用时才获取GPU名称
+    if torch.cuda.is_available():
+        print("GPU名称：", torch.cuda.get_device_name(0))
+        # 测试GPU张量创建
+        x = torch.tensor([1, 2, 3]).to("cuda")
+        print(f"张量设备： {x.device}")
+    else:
+        print("未检测到CUDA，使用CPU运行")
 
 
 if __name__ == "__main__":

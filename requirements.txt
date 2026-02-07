@@ -1,6 +1,11 @@
 tiktoken
 matplotlib
 tensorflow>=2.15.0
-tqdm>=4.6
-torch==2.1.0
-numpy==1.26.4
+# requirements.txt
+torch==2.1.0+cu118
+torchvision==0.16.0+cu118
+torchaudio==2.1.0+cu118
+numpy<2.0  # 锁定NumPy为1.x
+tokenizers>=0.15.0
+datasets>=2.14.0
+tqdm>=4.66.0
