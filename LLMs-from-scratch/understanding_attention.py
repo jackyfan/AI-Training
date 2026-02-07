@@ -124,6 +124,13 @@ def step_by_by_step_attention():
 
 
 class SelfAttention(nn.Module):
+    r"""
+        Args:
+            d_in:输入特征向量的维度
+            d_out_kq:查询和键输出的维度
+            d_out_v:值输出的维度
+        """
+
     def __init__(self, d_in, d_out_kq, d_out_v):
         super().__init__()
         self.d_out_kq = d_out_kq
@@ -144,6 +151,14 @@ class SelfAttention(nn.Module):
 
 
 class MultiHeadAttentionWrapper(nn.Module):
+    r"""
+    Args:
+        d_in:输入特征向量的维度
+        d_out_kq:查询和键输出的维度
+        d_out_v:值输出的维度
+        num_heads:注意力头的数量
+    """
+
     def __init__(self, d_in, d_out_kq, d_out_v, num_heads):
         super().__init__()
         self.heads = nn.ModuleList([
